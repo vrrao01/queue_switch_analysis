@@ -13,6 +13,15 @@ extern double knockout;         // knockout as fraction of total number of ports
 extern string outputFileName;   // Output file name
 extern unsigned int timeSlots;  // Max number of time slots
 
+typedef struct packet
+{
+    int sourcePort;
+    int destPort;
+    unsigned int genTime; // Packet generation timeslot
+    packet(int s, int d, unsigned int g) : sourcePort(s), destPort(d), genTime(g) {}
+
+} packet;
+
 /**
  * @brief Parses the command line input given and appropriates modifies global variables
  *
