@@ -1,10 +1,9 @@
 #include "utility.h"
 #include <cctype>
 #include <cstdlib>
+#include <vector>
 #include <iostream>
 
-// ./routing −N switchportcount −B buffersize −p packetgenprob
-// −queue IN Q|KOU Q|ISLIP −K  knockout −out−outputf ile −T maxtimeslots
 void parseCommandLineArgs(int argc, char *argv[])
 {
     char *ptr;
@@ -39,4 +38,20 @@ void parseCommandLineArgs(int argc, char *argv[])
             exit(0);
         }
     }
+}
+
+void removeFromInputBuffer(packet p)
+{
+    extern vector<vector<packet>> inputBuffer;
+    vector<packet>::iterator itr = inputBuffer[p.sourcePort].begin();
+    while (itr != inputBuffer[p.sourcePort].end())
+    {
+
+        if (itr->packetID == p.packetID)
+        {
+            break;
+        }
+        itr++;
+    }
+    inputBuffer[p.sourcePort].erase(itr);
 }

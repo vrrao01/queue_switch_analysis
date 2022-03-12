@@ -17,8 +17,9 @@ typedef struct packet
 {
     int sourcePort;
     int destPort;
+    unsigned int packetID;
     unsigned int genTime; // Packet generation timeslot
-    packet(int s, int d, unsigned int g) : sourcePort(s), destPort(d), genTime(g) {}
+    packet(unsigned int pid, int s, int d, unsigned int g) : sourcePort(s), destPort(d), packetID(pid), genTime(g) {}
 
 } packet;
 
@@ -29,5 +30,12 @@ typedef struct packet
  * @param argv List of provided arguments
  */
 void parseCommandLineArgs(int argc, char *argv[]);
+
+/**
+ * @brief Removes a packet that has been scheduled for transmission from its respective input port buffer
+ *
+ * @param p A packet chosen for transmission
+ */
+void removeFromInputBuffer(packet p);
 
 #endif
