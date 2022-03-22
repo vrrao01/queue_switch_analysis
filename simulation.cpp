@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <random>
+#include <algorithm>
 #include <chrono>
 #include "utility.h"
 
@@ -16,8 +17,11 @@ string outputFileName = "sim_results.txt"; // Output file name
 unsigned int timeSlots = 10000;            // Max number of time slots
 vector<vector<packet>> inputBuffer;        // Represents input port buffer
 vector<vector<packet>> outputBuffer;       // Represents output port buffer
-vector<unsigned int> packetGenTime;        // Stores the next generation time for a packet at each port
+vector<unsigned int> packetGen;        // Stores the next generation time for a packet at each port
 unsigned int packetID = 0;                 // Next available packet ID
+unsigned int totalPacketsGenerated = 0;
+unsigned int totalPacketsDropped = 0;
+unsigned int totalPacketsProcessed = 0;
 
 void init();                             // Performs some required initialisation tasks
 unsigned int getNextPID();               // Returns the next available Packet ID and increments the counter
@@ -37,6 +41,21 @@ void printInputDebug()
     }
 }
 
+void removeFromInputBuffer(packet p)
+{
+    extern vector<vector<packet>> inputBuffer;
+    vector<packet>::iterator itr = inputBuffer[p.sourcePort].begin();
+    while (itr != inputBuffer[p.sourcePort].end())
+    {
+        if (itr->packetID == p.packetID)
+        {
+            inputBuffer[p.sourcePort].erase(itr);
+            break;
+        }
+        itr++;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     parseCommandLineArgs(argc, argv);
@@ -52,11 +71,12 @@ int main(int argc, char *argv[])
         generateTraffic(time);
         schedulePackets(time);
     }
+    cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsProcessed: " << totalPacketsProcessed << '\n';
 }
 
 void init()
 {
-    packetGenTime.resize(nPort);
+    packetGen.resize(nPort);
     inputBuffer.resize(nPort);
     outputBuffer.resize(nPort);
 
@@ -68,7 +88,7 @@ void init()
     // Sets the generation time for the first packet
     for (int i = 0; i < nPort; i++)
     {
-        packetGenTime[i] = static_cast<unsigned int>(expDist(generator));
+        packetGen[i] = rand() % 2;
     }
 }
 
@@ -91,16 +111,21 @@ void generateTraffic(unsigned int time)
 
     for (int i = 0; i < nPort; i++)
     {
-        if (time == packetGenTime[i])
+        if (packetGen[i])
         {
             // Create packet for port i
-            inputBuffer[i].emplace_back(getNextPID(), i, uniDist(generator), time);
-
-            // Find time of next packet generation
-            packetGenTime[i] = time + static_cast<unsigned int>(expDist(generator)) + 1;
-
-            cout << time << " : Generated packet " << inputBuffer[i].back().packetID << " at input port " << i << " destined to output port " << inputBuffer[i].back().destPort << " Next gen at = " << packetGenTime[i] << endl;
+            if (inputBuffer[i].size() < bufferSize) {
+                inputBuffer[i].emplace_back(getNextPID(), i, uniDist(generator), time);
+                ++totalPacketsGenerated;
+                cout << "At time " << time << " : generated packet " << inputBuffer[i].back().packetID << " at input port " << i << " destined to output port " << inputBuffer[i].back().destPort << endl;
+            } else {
+                ++totalPacketsDropped;
+                ++totalPacketsGenerated;
+                cout << "At time " << time << " : generated packet " << getNextPID() << " dropped at input port " << i << " destined to output port " << uniDist(generator) << endl;;
+            }
         }
+        // Find time of next packet generation
+        packetGen[i] = rand() % 2;
     }
 }
 
@@ -110,7 +135,7 @@ void schedulePackets(unsigned int time)
     {
         vector<vector<packet>> inputQueue = inputBuffer;
         cout << "TIME SCHEDULE = " << time << endl;
-        printInputDebug();
+        // printInputDebug();
         // Find packets destined to each output port
         for (int outP = 0; outP < nPort; outP++)
         {
@@ -129,7 +154,8 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput.front();
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                // cout << time << " : Selected packet generated at t = " << pckt.genTime << " to output port " << pckt.destPort << endl;
+                ++totalPacketsProcessed;
+                cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
             else if (packetsToOutput.size() > 1)
             {
@@ -138,9 +164,58 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput[randIndex];
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << " to output port " << pckt.destPort << endl;
+                ++totalPacketsProcessed;
+                cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
         }
-        printInputDebug();
+        // printInputDebug();
+    }
+    else if (qSchedule == "KOUQ")
+    {
+        vector<vector<packet>> inputQueue = inputBuffer;
+        cout << "TIME SCHEDULE = " << time << endl;
+        // printInputDebug();
+        // Find packets destined to each output port
+        for (int outP = 0; outP < nPort; outP++)
+        {
+            vector<packet> packetsToOutput;
+            packetsToOutput.reserve(nPort);
+            for (int i = 0; i < nPort; i++)
+            {
+                if (!inputQueue[i].empty() && inputQueue[i].front().destPort == outP)
+                {
+                    packetsToOutput.push_back(inputQueue[i].front());
+                }
+            }
+            int Z = knockout * 1.0 * nPort;
+            // If single packet destined to port, store in output port buffer
+            if (packetsToOutput.size() <= Z)
+            {
+                // sort the packets according to arrival time
+                sort(packetsToOutput.begin(), packetsToOutput.end(), [](auto const & left, auto const & right) {
+                    return left.genTime < right.genTime;
+                });
+                for (packet pckt : packetsToOutput) {
+                    outputBuffer[outP].push_back(pckt);
+                    removeFromInputBuffer(pckt);
+                    ++totalPacketsProcessed;
+                    cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
+                }
+            }
+            else
+            {
+                int X = min((int) packetsToOutput.size(), Z);
+                // Randomly select Z packets destined to same output port
+                while (X--) {
+                    int randIndex = rand() % (X + 1);
+                    packet pckt = packetsToOutput[randIndex];
+                    outputBuffer[outP].push_back(pckt);
+                    removeFromInputBuffer(pckt);
+                    ++totalPacketsProcessed;
+                    cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
+                }
+            }
+        }
+        // printInputDebug();
     }
 }

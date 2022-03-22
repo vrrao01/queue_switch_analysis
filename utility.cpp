@@ -14,15 +14,19 @@ void parseCommandLineArgs(int argc, char *argv[])
         {
         case 'N':
             nPort = strtoul(argv[i + 1], &ptr, 10);
+            cout << nPort << '\n';
             break;
         case 'B':
             bufferSize = strtoul(argv[i + 1], &ptr, 10);
+            cout << bufferSize << '\n';
             break;
         case 'P':
             packGenProb = strtod(argv[i + 1], &ptr);
+            cout << packGenProb << '\n';
             break;
         case 'Q':
             qSchedule = argv[i + 1];
+            cout << qSchedule << '\n';
             break;
         case 'K':
             knockout = strtod(argv[i + 1], &ptr);
@@ -38,20 +42,4 @@ void parseCommandLineArgs(int argc, char *argv[])
             exit(0);
         }
     }
-}
-
-void removeFromInputBuffer(packet p)
-{
-    extern vector<vector<packet>> inputBuffer;
-    vector<packet>::iterator itr = inputBuffer[p.sourcePort].begin();
-    while (itr != inputBuffer[p.sourcePort].end())
-    {
-
-        if (itr->packetID == p.packetID)
-        {
-            break;
-        }
-        itr++;
-    }
-    inputBuffer[p.sourcePort].erase(itr);
 }
