@@ -16,13 +16,14 @@ double knockout = 0.6;                     // knockout as fraction of total numb
 string outputFileName = "sim_results.txt"; // Output file name
 unsigned int timeSlots = 10000;            // Max number of time slots
 vector<vector<packet>> inputBuffer;        // Represents input port buffer
+vector<vector<vector<packet>>> voq;        // Virtual output queues for input ports
 vector<vector<packet>> outputBuffer;       // Represents output port buffer
 vector<unsigned int> packetGen;            // Stores the next generation time for a packet at each port
 unsigned int packetID = 0;                 // Next available packet ID
-unsigned int totalPacketsGenerated = 0;
-unsigned int totalPacketsDropped = 0;
-unsigned int totalPacketsTransmitted = 0;
-vector<unsigned int> packetDelays; // Stores delay of each packet for calculations
+unsigned int totalPacketsGenerated = 0;    // Counter for total packets generated during simulation
+unsigned int totalPacketsDropped = 0;      // Number of packets dropped due to buffer overflow or KOUQ
+unsigned int totalPacketsTransmitted = 0;  // Number of packets transmitted
+vector<unsigned int> packetDelays;         // Stores delay of each packet for calculations
 
 void init();                             // Performs some required initialisation tasks
 unsigned int getNextPID();               // Returns the next available Packet ID and increments the counter
@@ -72,6 +73,11 @@ void init()
     packetGen.resize(nPort);
     inputBuffer.resize(nPort);
     outputBuffer.resize(nPort);
+
+    if (qSchedule == "KOUQ")
+    {
+        voq.resize(nPort, vector<vector<packet>>(nPort));
+    }
 
     // Sets the generation time for the first packet
     for (int i = 0; i < nPort; i++)
@@ -146,7 +152,6 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput.front();
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                // ++totalPacketsTransmitted;
                 cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
             else if (packetsToOutput.size() > 1)
@@ -156,7 +161,6 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput[randIndex];
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                // ++totalPacketsTransmitted;
                 cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
         }
@@ -190,28 +194,32 @@ void schedulePackets(unsigned int time)
                 {
                     outputBuffer[outP].push_back(pckt);
                     removeFromInputBuffer(pckt);
-                    // ++totalPacketsTransmitted;
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
             }
             else // More than K (knockout) value packets destined to output port
             {
-                totalPacketsDropped += packetsToOutput.size() - K;
                 int X = K;
                 // Randomly select K packets destined to same output port
                 while (X--)
                 {
-                    int randIndex = rand() % (packetsToOutput.size()); // TODO: It was % (X+1) but more transmitted than generated
+                    int randIndex = rand() % (packetsToOutput.size());
                     packet pckt = packetsToOutput[randIndex];
                     outputBuffer[outP].push_back(pckt);
                     removeFromInputBuffer(pckt);
                     packetsToOutput.erase(packetsToOutput.begin() + randIndex);
-                    // ++totalPacketsTransmitted;
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
                 // Sort packets in output queue according to arrival time.
                 sort(outputBuffer[outP].begin(), outputBuffer[outP].end(), [](auto const &left, auto const &right)
                      { return left.genTime < right.genTime; });
+                // Drop remaining packets that were not randomly selected
+                for (packet pckt : packetsToOutput)
+                {
+                    outputBuffer[outP].push_back(pckt);
+                    removeFromInputBuffer(pckt);
+                    totalPacketsDropped++;
+                }
             }
         }
         // printInputDebug();
@@ -229,7 +237,7 @@ void transmitPackets(unsigned int time)
             // Remove packet from output buffer
             outputBuffer[outP].erase(outputBuffer[outP].begin());
             // Store the delay
-            unsigned int pcktDelay = time - pckt.genTime + 1; // TODO: Maybe add 1 cuz trans takes one slot
+            unsigned int pcktDelay = time - pckt.genTime + 1; // Add 1 to since it takes one time slot to transmit
             packetDelays.push_back(pcktDelay);
             totalPacketsTransmitted++;
         }
