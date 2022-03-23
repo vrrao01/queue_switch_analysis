@@ -2,6 +2,7 @@
 #define UTILITY_H
 
 #include <string>
+#include <vector>
 using namespace std;
 
 // Variables defined in simulation.cpp
@@ -37,5 +38,13 @@ void parseCommandLineArgs(int argc, char *argv[]);
  * @param p A packet chosen for transmission
  */
 void removeFromInputBuffer(packet p);
+
+/**
+ * @brief Calculates the average of a vector of unsigned int
+ *
+ * @param arr Input vector
+ * @return unsigned long long Average of all values in the vector
+ */
+double calculateAverage(const vector<unsigned int> &arr);
 
 #endif
