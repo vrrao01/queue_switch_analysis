@@ -43,3 +43,18 @@ void parseCommandLineArgs(int argc, char *argv[])
         }
     }
 }
+
+void removeFromInputBuffer(packet p)
+{
+    extern vector<vector<packet>> inputBuffer;
+    vector<packet>::iterator itr = inputBuffer[p.sourcePort].begin();
+    while (itr != inputBuffer[p.sourcePort].end())
+    {
+        if (itr->packetID == p.packetID)
+        {
+            inputBuffer[p.sourcePort].erase(itr);
+            break;
+        }
+        itr++;
+    }
+}

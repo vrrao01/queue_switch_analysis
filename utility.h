@@ -36,6 +36,6 @@ void parseCommandLineArgs(int argc, char *argv[]);
  *
  * @param p A packet chosen for transmission
  */
-// void removeFromInputBuffer(packet p);
+void removeFromInputBuffer(packet p);
 
 #endif
