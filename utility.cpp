@@ -58,3 +58,15 @@ void removeFromInputBuffer(packet p)
         itr++;
     }
 }
+
+double calculateAverage(const vector<unsigned int> &arr)
+{
+    int length = arr.size();
+    unsigned long long sum = 0;
+    for (int i = 0; i < length; i++)
+    {
+        sum += arr[i];
+    }
+    double avg = static_cast<double>(sum) / length;
+    return avg;
+}

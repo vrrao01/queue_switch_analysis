@@ -21,12 +21,14 @@ vector<unsigned int> packetGen;            // Stores the next generation time fo
 unsigned int packetID = 0;                 // Next available packet ID
 unsigned int totalPacketsGenerated = 0;
 unsigned int totalPacketsDropped = 0;
-unsigned int totalPacketsProcessed = 0;
+unsigned int totalPacketsTransmitted = 0;
+vector<unsigned int> packetDelays; // Stores delay of each packet for calculations
 
 void init();                             // Performs some required initialisation tasks
 unsigned int getNextPID();               // Returns the next available Packet ID and increments the counter
 void generateTraffic(unsigned int time); // Executes Phase 1 - Traffic Generation
 void schedulePackets(unsigned int time); // Executes Phase 2 - Packet Scheduling
+void transmitPackets(unsigned int time); // Executes Phase 3 - Packet Transmission
 
 void printInputDebug()
 {
@@ -55,25 +57,30 @@ int main(int argc, char *argv[])
     {
         generateTraffic(time);
         schedulePackets(time);
+        transmitPackets(time);
     }
-    cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsProcessed: " << totalPacketsProcessed << '\n';
+    cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsTransmitted: " << totalPacketsTransmitted << '\n';
+    cout << "Average delay: " << calculateAverage(packetDelays) << endl;
+    cout << "Average link utilization: " << (double)totalPacketsTransmitted / (nPort * timeSlots) << endl;
 }
 
 void init()
 {
+    int seed = chrono::system_clock::now().time_since_epoch().count();
+    srand(seed);
+
     packetGen.resize(nPort);
     inputBuffer.resize(nPort);
     outputBuffer.resize(nPort);
 
-    // Exponential distribution for interarrival times
-    int seed = chrono::system_clock::now().time_since_epoch().count();
-    default_random_engine generator(seed);
-    std::exponential_distribution<double> expDist(packGenProb);
-
     // Sets the generation time for the first packet
     for (int i = 0; i < nPort; i++)
     {
-        packetGen[i] = rand() % 2;
+        int random = (int)(100.0 * rand() / (RAND_MAX + 1.0)) + 1;
+        if (random < 100 * packGenProb)
+            packetGen[i] = 1;
+        else
+            packetGen[i] = 0;
     }
 }
 
@@ -86,13 +93,6 @@ unsigned int getNextPID()
 
 void generateTraffic(unsigned int time)
 {
-    // Exponential distribution for interarrival times
-    int seed = chrono::system_clock::now().time_since_epoch().count();
-    default_random_engine generator(seed);
-    std::exponential_distribution<double> expDist(packGenProb);
-
-    // Uniform distribution for output port selection of a generated packet
-    uniform_int_distribution<int> uniDist(0, nPort - 1);
 
     for (int i = 0; i < nPort; i++)
     {
@@ -101,20 +101,23 @@ void generateTraffic(unsigned int time)
             // Create packet for port i
             if (inputBuffer[i].size() < bufferSize)
             {
-                inputBuffer[i].emplace_back(getNextPID(), i, uniDist(generator), time);
+                inputBuffer[i].emplace_back(getNextPID(), i, rand() % nPort, time);
                 ++totalPacketsGenerated;
                 cout << "At time " << time << " : generated packet " << inputBuffer[i].back().packetID << " at input port " << i << " destined to output port " << inputBuffer[i].back().destPort << endl;
             }
-            else
+            else // Drop packet since input buffer is full
             {
                 ++totalPacketsDropped;
                 ++totalPacketsGenerated;
-                cout << "At time " << time << " : generated packet " << getNextPID() << " dropped at input port " << i << " destined to output port " << uniDist(generator) << endl;
-                ;
+                cout << "At time " << time << " : generated packet " << getNextPID() << " dropped at input port " << i << " destined to output port " << rand() % nPort << endl;
             }
         }
         // Find time of next packet generation
-        packetGen[i] = rand() % 2;
+        int random = (int)(100.0 * rand() / (RAND_MAX + 1.0)) + 1;
+        if (random < 100 * packGenProb)
+            packetGen[i] = 1;
+        else
+            packetGen[i] = 0;
     }
 }
 
@@ -143,7 +146,7 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput.front();
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                ++totalPacketsProcessed;
+                // ++totalPacketsTransmitted;
                 cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
             else if (packetsToOutput.size() > 1)
@@ -153,7 +156,7 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput[randIndex];
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                ++totalPacketsProcessed;
+                // ++totalPacketsTransmitted;
                 cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
         }
@@ -187,21 +190,23 @@ void schedulePackets(unsigned int time)
                 {
                     outputBuffer[outP].push_back(pckt);
                     removeFromInputBuffer(pckt);
-                    ++totalPacketsProcessed;
+                    // ++totalPacketsTransmitted;
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
             }
             else // More than K (knockout) value packets destined to output port
             {
+                totalPacketsDropped += packetsToOutput.size() - K;
                 int X = K;
                 // Randomly select K packets destined to same output port
                 while (X--)
                 {
-                    int randIndex = rand() % (X + 1);
+                    int randIndex = rand() % (packetsToOutput.size()); // TODO: It was % (X+1) but more transmitted than generated
                     packet pckt = packetsToOutput[randIndex];
                     outputBuffer[outP].push_back(pckt);
                     removeFromInputBuffer(pckt);
-                    ++totalPacketsProcessed;
+                    packetsToOutput.erase(packetsToOutput.begin() + randIndex);
+                    // ++totalPacketsTransmitted;
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
                 // Sort packets in output queue according to arrival time.
@@ -210,5 +215,23 @@ void schedulePackets(unsigned int time)
             }
         }
         // printInputDebug();
+    }
+}
+
+void transmitPackets(unsigned int time)
+{
+    for (int outP = 0; outP < nPort; outP++)
+    {
+        // Transmit the packet at the head of each output buffer
+        if (outputBuffer[outP].size())
+        {
+            packet pckt = outputBuffer[outP][0];
+            // Remove packet from output buffer
+            outputBuffer[outP].erase(outputBuffer[outP].begin());
+            // Store the delay
+            unsigned int pcktDelay = time - pckt.genTime + 1; // TODO: Maybe add 1 cuz trans takes one slot
+            packetDelays.push_back(pcktDelay);
+            totalPacketsTransmitted++;
+        }
     }
 }
