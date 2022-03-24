@@ -78,7 +78,10 @@ void fillVOQ()
         for (packet pckt : inputBuffer[i])
         {
             int dest = pckt.destPort;
-            voq[i][dest].push_back(pckt);
+            if (voq[i][dest].size() < bufferSize)
+            {
+                voq[i][dest].push_back(pckt);
+            }
         }
         inputBuffer[i].clear();
     }

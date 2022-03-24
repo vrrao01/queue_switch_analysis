@@ -15,6 +15,7 @@ string qSchedule = "INQ";                  // Queue scheduling technique
 double knockout = 0.6;                     // knockout as fraction of total number of ports
 string outputFileName = "sim_results.txt"; // Output file name
 unsigned int timeSlots = 10000;            // Max number of time slots
+unsigned int iSLIPiters = 2;               // Number of iSLIP iterations
 vector<vector<packet>> inputBuffer;        // Represents input port buffer
 vector<vector<vector<packet>>> voq;        // Virtual output queues for input ports
 vector<vector<packet>> outputBuffer;       // Represents output port buffer
@@ -36,6 +37,23 @@ void transmitPackets(unsigned int time); // Executes Phase 3 - Packet Transmissi
 
 void printInputDebug()
 {
+    if (qSchedule == "iSLIP")
+    {
+        for (int i = 0; i < nPort; i++)
+        {
+            cout << "Input Port " << i << endl;
+            for (int o = 0; o < nPort; o++)
+            {
+                cout << "\tTo Output Port " << o << " ";
+                for (packet p : voq[i][o])
+                {
+                    cout << "| " << p.packetID << " | ";
+                }
+                cout << endl;
+            }
+        }
+        return;
+    }
     for (int i = 0; i < nPort; i++)
     {
         cout << "Input Port " << i << " ";
@@ -62,6 +80,15 @@ int main(int argc, char *argv[])
         generateTraffic(time);
         schedulePackets(time);
         transmitPackets(time);
+        // for (int i = 0; i < nPort; i++)
+        // {
+        //     int sum = 0;
+        //     for (int o = 0; o < nPort; o++)
+        //     {
+        //         sum += voq[i][o].size();
+        //     }
+        //     cout << "INPUT PORT " << i << " BUFFER SIZE = " << sum << endl;
+        // }
     }
     totalPacketsDropped = totalPacketsGenerated - totalPacketsTransmitted;
     cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsTransmitted: " << totalPacketsTransmitted << '\n';
@@ -211,6 +238,10 @@ void schedulePackets(unsigned int time)
                     {
                         outputBuffer[outP].push_back(pckt);
                     }
+                    else
+                    {
+                        cout << "NO SPACE IN BUFFER" << endl;
+                    }
                     removeFromInputBuffer(pckt);
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
@@ -227,6 +258,10 @@ void schedulePackets(unsigned int time)
                     if (outputBuffer[outP].size() < bufferSize)
                     {
                         outputBuffer[outP].push_back(pckt);
+                    }
+                    else
+                    {
+                        cout << "NO SPACE IN BUFFER" << endl;
                     }
                     removeFromInputBuffer(pckt);
                     packetsToOutput.erase(packetsToOutput.begin() + randIndex);
@@ -250,60 +285,150 @@ void schedulePackets(unsigned int time)
     }
     else if (qSchedule == "iSLIP")
     {
-        vector<vector<int>> requests(nPort);
-        vector<vector<int>> grants(nPort);
-        // Step 1 : Request
-        for (int i = 0; i < nPort; i++)
+        // printInputDebug();
+
+        vector<bool> matchedIP(nPort, false);
+        vector<bool> matchedOP(nPort, false);
+
+        for (int iter = 0; iter < iSLIPiters; iter++)
         {
+            // cout << "iter = " << iter << endl;
+            // cout << "ip arbiters: " << endl;
+            // for (auto x : ipArbiter)
+            // {
+            //     cout << x << " ";
+            // }
+            // cout << endl;
+            // cout << "op arbiters: " << endl;
+            // for (auto x : opArbiter)
+            // {
+            //     cout << x << " ";
+            // }
+            // cout << endl;
+            vector<vector<int>> requests(nPort);
+            vector<vector<int>> grants(nPort);
+            // Step 1: Request
+            for (int i = 0; i < nPort; i++)
+            {
+                for (int outP = 0; outP < nPort; outP++)
+                {
+                    // If input port is unmatched and has a packet to output port, then send requests
+                    if (!matchedIP[i] && voq[i][outP].size())
+                    {
+                        requests[outP].push_back(i);
+                    }
+                }
+            }
+            // Step 2: Grant
             for (int outP = 0; outP < nPort; outP++)
             {
-                if (voq[i][outP].size())
+                if (!matchedOP[outP] && requests[outP].size())
                 {
-                    requests[outP].push_back(i);
-                    // cout << "\tInput Port " << i << " sent request to Output Port " << outP << endl;
+                    int grantedInputPort = opArbiter[outP];
+                    // Grant input port than appears next in round robin fashion in arbiter
+                    while (find(requests[outP].begin(), requests[outP].end(), grantedInputPort) == requests[outP].end())
+                    {
+                        grantedInputPort = (grantedInputPort + 1) % nPort;
+                    }
+                    grants[grantedInputPort].push_back(outP);
                 }
             }
-        }
-        // Step 2: Grant
-        for (int outP = 0; outP < nPort; outP++)
-        {
-            if (requests[outP].size())
+            // Step 3: Accept
+            for (int i = 0; i < nPort; i++)
             {
-                int grantedInputPort = opArbiter[outP];
-                // Grant input port than appears next in round robin fashion in arbiter
-                while (find(requests[outP].begin(), requests[outP].end(), grantedInputPort) == requests[outP].end())
+                if (!matchedIP[i] && grants[i].size())
                 {
-                    grantedInputPort = (grantedInputPort + 1) % nPort;
+                    int acceptedOutputPort = ipArbiter[i];
+                    // Find grant to accept by choosing output port that comes next in round robin fashion
+                    while (find(grants[i].begin(), grants[i].end(), acceptedOutputPort) == grants[i].end())
+                    {
+                        acceptedOutputPort = (acceptedOutputPort + 1) % nPort;
+                    }
+                    if (iter == 0) // Only update arbiters if it is first iteration
+                    {
+                        // Increase input arbiter to point to one location beyond accepted output port
+                        ipArbiter[i] = (acceptedOutputPort + 1) % nPort;
+                        // Increase output arbiter to point to one lcoation beyond input port that accepted request
+                        opArbiter[acceptedOutputPort] = (i + 1) % nPort;
+                    }
+                    // Send packet to output buffer
+                    packet pckt = voq[i][acceptedOutputPort].front();
+                    if (outputBuffer[acceptedOutputPort].size() < bufferSize)
+                    {
+                        outputBuffer[acceptedOutputPort].push_back(pckt);
+                    }
+                    else
+                    {
+                        cout << "NO SPACE IN BUFFER" << endl;
+                    }
+                    voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
+                    matchedIP[i] = true;
+                    matchedOP[acceptedOutputPort] = true;
+                    cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
                 }
-                grants[grantedInputPort].push_back(outP);
-                // cout << "\tOutput Port " << outP << " granted Input Port " << grantedInputPort << endl;
             }
+            requests.clear();
+            grants.clear();
         }
-        // Step 3: Accept
-        for (int i = 0; i < nPort; i++)
-        {
-            if (grants[i].size())
-            {
-                int acceptedOutputPort = ipArbiter[i];
-                // Find grant to accept by choosing output port that comes next in round robin fashion
-                while (find(grants[i].begin(), grants[i].end(), acceptedOutputPort) == grants[i].end())
+        /*
+
+                // Step 1 : Request
+                for (int i = 0; i < nPort; i++)
                 {
-                    acceptedOutputPort = (acceptedOutputPort + 1) % nPort;
+                    for (int outP = 0; outP < nPort; outP++)
+                    {
+                        if (voq[i][outP].size())
+                        {
+                            requests[outP].push_back(i);
+                            // cout << "\tInput Port " << i << " sent request to Output Port " << outP << endl;
+                        }
+                    }
                 }
-                // Increase input arbiter to point to one location beyond accepted output port
-                ipArbiter[i] = (acceptedOutputPort + 1) % nPort;
-                // Increase output arbiter to point to one lcoation beyond input port that accepted request
-                opArbiter[acceptedOutputPort] = (i + 1) % nPort;
-                // Send packet to output buffer
-                packet pckt = voq[i][acceptedOutputPort].front();
-                if (outputBuffer[acceptedOutputPort].size() < bufferSize)
+                // Step 2: Grant
+                for (int outP = 0; outP < nPort; outP++)
                 {
-                    outputBuffer[acceptedOutputPort].push_back(pckt);
+                    if (requests[outP].size())
+                    {
+                        int grantedInputPort = opArbiter[outP];
+                        // Grant input port than appears next in round robin fashion in arbiter
+                        while (find(requests[outP].begin(), requests[outP].end(), grantedInputPort) == requests[outP].end())
+                        {
+                            grantedInputPort = (grantedInputPort + 1) % nPort;
+                        }
+                        grants[grantedInputPort].push_back(outP);
+                        // cout << "\tOutput Port " << outP << " granted Input Port " << grantedInputPort << endl;
+                    }
                 }
-                voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
-                // cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
-            }
-        }
+                // Step 3: Accept
+                for (int i = 0; i < nPort; i++)
+                {
+                    if (grants[i].size())
+                    {
+                        int acceptedOutputPort = ipArbiter[i];
+                        // Find grant to accept by choosing output port that comes next in round robin fashion
+                        while (find(grants[i].begin(), grants[i].end(), acceptedOutputPort) == grants[i].end())
+                        {
+                            acceptedOutputPort = (acceptedOutputPort + 1) % nPort;
+                        }
+                        // Increase input arbiter to point to one location beyond accepted output port
+                        ipArbiter[i] = (acceptedOutputPort + 1) % nPort;
+                        // Increase output arbiter to point to one lcoation beyond input port that accepted request
+                        opArbiter[acceptedOutputPort] = (i + 1) % nPort;
+                        // Send packet to output buffer
+                        packet pckt = voq[i][acceptedOutputPort].front();
+                        if (outputBuffer[acceptedOutputPort].size() < bufferSize)
+                        {
+                            outputBuffer[acceptedOutputPort].push_back(pckt);
+                        }
+                        else
+                        {
+                            cout << "NO SPACE IN BUFFER" << endl;
+                        }
+                        voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
+                        // cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
+                    }
+                }
+        */
     }
 }
 
