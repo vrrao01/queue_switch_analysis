@@ -48,6 +48,15 @@ void removeFromInputBuffer(packet p);
 double calculateAverage(const vector<unsigned int> &arr);
 
 /**
+ * @brief Calculates the standard devation of a vector of unsigned int
+ *
+ * @param arr Input vector
+ * @param avg Average value of the vector
+ * @return double Standard deviation of the vector
+ */
+double calculateStdDev(const vector<unsigned int> &arr, double avg);
+
+/**
  * @brief In case of iSLIP, this function will fill virtual output queues
  *
  */

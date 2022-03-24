@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <vector>
+#include <cmath>
 #include <iostream>
 
 void parseCommandLineArgs(int argc, char *argv[])
@@ -81,4 +82,18 @@ void fillVOQ()
         }
         inputBuffer[i].clear();
     }
+}
+
+double calculateStdDev(const vector<unsigned int> &arr, double avg)
+{
+    double sqSum = 0;
+    int length = arr.size();
+    for (int i = 0; i < length; i++)
+    {
+        sqSum += arr[i] * arr[i];
+    }
+    double squareMean = sqSum / length;
+    double stdDev = squareMean - avg * avg;
+    stdDev = sqrt(stdDev);
+    return stdDev;
 }

@@ -26,6 +26,7 @@ unsigned int totalPacketsGenerated = 0;    // Counter for total packets generate
 unsigned int totalPacketsDropped = 0;      // Number of packets dropped due to buffer overflow or KOUQ
 unsigned int totalPacketsTransmitted = 0;  // Number of packets transmitted
 vector<unsigned int> packetDelays;         // Stores delay of each packet for calculations
+vector<unsigned int> kouqDropProb;         // Stores KOUQ Drop Probability
 
 void init();                             // Performs some required initialisation tasks
 unsigned int getNextPID();               // Returns the next available Packet ID and increments the counter
@@ -63,8 +64,16 @@ int main(int argc, char *argv[])
         transmitPackets(time);
     }
     cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsTransmitted: " << totalPacketsTransmitted << '\n';
-    cout << "Average delay: " << calculateAverage(packetDelays) << endl;
+    double avgDelay = calculateAverage(packetDelays);
+    cout << "Average packet delay: " << avgDelay << endl;
+    cout << "Standard Deviation of packet delay: " << calculateStdDev(packetDelays, avgDelay) << endl;
     cout << "Average link utilization: " << (double)totalPacketsTransmitted / (nPort * timeSlots) << endl;
+    if (qSchedule == "KOUQ")
+    {
+        double avg = calculateAverage(kouqDropProb);
+        avg = avg / nPort;
+        cout << "KOUQ Drop Probability: " << avg << endl;
+    }
 }
 
 void init()
@@ -86,7 +95,7 @@ void init()
     // Sets the generation time for the first packet
     for (int i = 0; i < nPort; i++)
     {
-        double random = (100.0 * rand() / (RAND_MAX + 1.0)) + 1;
+        int random = (100.0 * rand() / (RAND_MAX + 1.0)) + 1;
         if (random < 100.0 * packGenProb)
             packetGen[i] = 1;
         else
@@ -122,7 +131,7 @@ void generateTraffic(unsigned int time)
             }
         }
         // Find time of next packet generation
-        double random = (100.0 * rand() / (RAND_MAX + 1.0)) + 1;
+        int random = (100.0 * rand() / (RAND_MAX + 1.0)) + 1;
         if (random < 100.0 * packGenProb)
             packetGen[i] = 1;
         else
@@ -140,7 +149,6 @@ void schedulePackets(unsigned int time)
     {
         vector<vector<packet>> inputQueue = inputBuffer;
         cout << "TIME SCHEDULE = " << time << endl;
-        // printInputDebug();
         // Find packets destined to each output port
         for (int outP = 0; outP < nPort; outP++)
         {
@@ -171,13 +179,12 @@ void schedulePackets(unsigned int time)
                 cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
         }
-        // printInputDebug();
     }
     else if (qSchedule == "KOUQ")
     {
+        int kouqDropCount = 0; // Number of ports that received more than K packets
         vector<vector<packet>> inputQueue = inputBuffer;
         cout << "TIME SCHEDULE = " << time << endl;
-        // printInputDebug();
         // Find packets destined to each output port
         for (int outP = 0; outP < nPort; outP++)
         {
@@ -206,6 +213,7 @@ void schedulePackets(unsigned int time)
             }
             else // More than K (knockout) value packets destined to output port
             {
+                kouqDropCount++;
                 int X = K;
                 // Randomly select K packets destined to same output port
                 while (X--)
@@ -227,9 +235,10 @@ void schedulePackets(unsigned int time)
                     removeFromInputBuffer(pckt);
                     totalPacketsDropped++;
                 }
+                cout << "KOUQ DROP" << endl;
             }
         }
-        // printInputDebug();
+        kouqDropProb.push_back(kouqDropCount);
     }
     else if (qSchedule == "iSLIP")
     {
