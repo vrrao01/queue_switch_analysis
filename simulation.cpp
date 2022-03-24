@@ -63,11 +63,12 @@ int main(int argc, char *argv[])
         schedulePackets(time);
         transmitPackets(time);
     }
+    totalPacketsDropped = totalPacketsGenerated - totalPacketsTransmitted;
     cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsTransmitted: " << totalPacketsTransmitted << '\n';
     double avgDelay = calculateAverage(packetDelays);
     cout << "Average packet delay: " << avgDelay << endl;
     cout << "Standard Deviation of packet delay: " << calculateStdDev(packetDelays, avgDelay) << endl;
-    cout << "Average link utilization: " << (double)totalPacketsTransmitted / (nPort * timeSlots) << endl;
+    cout << "Average link utilization: " << (double)totalPacketsTransmitted / (nPort * (timeSlots - 1)) << endl;
     if (qSchedule == "KOUQ")
     {
         double avg = calculateAverage(kouqDropProb);
@@ -125,7 +126,6 @@ void generateTraffic(unsigned int time)
             }
             else // Drop packet since input buffer is full
             {
-                ++totalPacketsDropped;
                 ++totalPacketsGenerated;
                 cout << "At time " << time << " : generated packet " << getNextPID() << " dropped at input port " << i << " destined to output port " << rand() % nPort << endl;
             }
@@ -182,6 +182,7 @@ void schedulePackets(unsigned int time)
     }
     else if (qSchedule == "KOUQ")
     {
+        printInputDebug();
         int kouqDropCount = 0; // Number of ports that received more than K packets
         vector<vector<packet>> inputQueue = inputBuffer;
         cout << "TIME SCHEDULE = " << time << endl;
@@ -206,7 +207,10 @@ void schedulePackets(unsigned int time)
                      { return left.genTime < right.genTime; });
                 for (packet pckt : packetsToOutput)
                 {
-                    outputBuffer[outP].push_back(pckt);
+                    if (outputBuffer[outP].size() < bufferSize)
+                    {
+                        outputBuffer[outP].push_back(pckt);
+                    }
                     removeFromInputBuffer(pckt);
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
@@ -220,7 +224,10 @@ void schedulePackets(unsigned int time)
                 {
                     int randIndex = rand() % (packetsToOutput.size());
                     packet pckt = packetsToOutput[randIndex];
-                    outputBuffer[outP].push_back(pckt);
+                    if (outputBuffer[outP].size() < bufferSize)
+                    {
+                        outputBuffer[outP].push_back(pckt);
+                    }
                     removeFromInputBuffer(pckt);
                     packetsToOutput.erase(packetsToOutput.begin() + randIndex);
                     cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
@@ -239,6 +246,7 @@ void schedulePackets(unsigned int time)
             }
         }
         kouqDropProb.push_back(kouqDropCount);
+        printInputDebug();
     }
     else if (qSchedule == "iSLIP")
     {
@@ -288,7 +296,10 @@ void schedulePackets(unsigned int time)
                 opArbiter[acceptedOutputPort] = (i + 1) % nPort;
                 // Send packet to output buffer
                 packet pckt = voq[i][acceptedOutputPort].front();
-                outputBuffer[acceptedOutputPort].push_back(pckt);
+                if (outputBuffer[acceptedOutputPort].size() < bufferSize)
+                {
+                    outputBuffer[acceptedOutputPort].push_back(pckt);
+                }
                 voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
                 // cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
             }
@@ -308,6 +319,7 @@ void transmitPackets(unsigned int time)
             outputBuffer[outP].erase(outputBuffer[outP].begin());
             // Store the delay
             unsigned int pcktDelay = time - pckt.genTime + 1; // Add 1 to since it takes one time slot to transmit
+            cout << "\t" << pckt.packetID << " gentime = " << pckt.genTime << " delay = " << pcktDelay << endl;
             packetDelays.push_back(pcktDelay);
             totalPacketsTransmitted++;
         }
