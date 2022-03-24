@@ -46,7 +46,6 @@ void parseCommandLineArgs(int argc, char *argv[])
 
 void removeFromInputBuffer(packet p)
 {
-    extern vector<vector<packet>> inputBuffer;
     vector<packet>::iterator itr = inputBuffer[p.sourcePort].begin();
     while (itr != inputBuffer[p.sourcePort].end())
     {
@@ -69,4 +68,17 @@ double calculateAverage(const vector<unsigned int> &arr)
     }
     double avg = static_cast<double>(sum) / length;
     return avg;
+}
+
+void fillVOQ()
+{
+    for (int i = 0; i < nPort; i++)
+    {
+        for (packet pckt : inputBuffer[i])
+        {
+            int dest = pckt.destPort;
+            voq[i][dest].push_back(pckt);
+        }
+        inputBuffer[i].clear();
+    }
 }

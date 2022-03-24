@@ -47,4 +47,13 @@ void removeFromInputBuffer(packet p);
  */
 double calculateAverage(const vector<unsigned int> &arr);
 
+/**
+ * @brief In case of iSLIP, this function will fill virtual output queues
+ *
+ */
+void fillVOQ();
+
+extern vector<vector<packet>> inputBuffer; // Input port buffers
+extern vector<vector<vector<packet>>> voq; // Virtual output queues for input ports
+
 #endif
