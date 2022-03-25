@@ -29,6 +29,12 @@ void parseCommandLineArgs(int argc, char *argv[])
             break;
         case 'Q':
             qSchedule = argv[i + 1];
+
+            if (qSchedule != "KOUQ" && qSchedule != "INQ" && qSchedule != "iSLIP")
+            {
+                cout << "Queue type must be INQ / KOUQ / iSLIP. (CASE SENSITIVE)" << endl;
+                exit(0);
+            }
             cout << qSchedule << '\n';
             break;
         case 'K':
@@ -39,6 +45,9 @@ void parseCommandLineArgs(int argc, char *argv[])
             break;
         case 'T':
             timeSlots = strtoul(argv[i + 1], &ptr, 10);
+            break;
+        case 'L':
+            iSLIPiters = atoi(argv[i + 1]);
             break;
         default:
             cout << "Received invalid argument" << endl;

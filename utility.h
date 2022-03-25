@@ -13,6 +13,7 @@ extern string qSchedule;        // Queue scheduling technique
 extern double knockout;         // knockout as fraction of total number of ports
 extern string outputFileName;   // Output file name
 extern unsigned int timeSlots;  // Max number of time slots
+extern unsigned int iSLIPiters; // Number of iSLIP iterations
 
 typedef struct packet
 {
