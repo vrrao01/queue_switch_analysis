@@ -62,6 +62,12 @@ double calculateStdDev(const vector<unsigned int> &arr, double avg);
  */
 void fillVOQ();
 
+/**
+ * @brief Writes all simulation output values into the output file
+ *
+ */
+void writeOutput();
+
 extern vector<vector<packet>> inputBuffer; // Input port buffers
 extern vector<vector<vector<packet>>> voq; // Virtual output queues for input ports
 

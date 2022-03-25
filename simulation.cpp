@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <random>
 #include <algorithm>
@@ -28,6 +29,7 @@ unsigned int totalPacketsDropped = 0;      // Number of packets dropped due to b
 unsigned int totalPacketsTransmitted = 0;  // Number of packets transmitted
 vector<unsigned int> packetDelays;         // Stores delay of each packet for calculations
 vector<unsigned int> kouqDropProb;         // Stores KOUQ Drop Probability
+ofstream fout;                             // Simulation results output
 
 void init();                             // Performs some required initialisation tasks
 unsigned int getNextPID();               // Returns the next available Packet ID and increments the counter
@@ -35,73 +37,37 @@ void generateTraffic(unsigned int time); // Executes Phase 1 - Traffic Generatio
 void schedulePackets(unsigned int time); // Executes Phase 2 - Packet Scheduling
 void transmitPackets(unsigned int time); // Executes Phase 3 - Packet Transmission
 
-void printInputDebug()
-{
-    if (qSchedule == "iSLIP")
-    {
-        for (int i = 0; i < nPort; i++)
-        {
-            cout << "Input Port " << i << endl;
-            for (int o = 0; o < nPort; o++)
-            {
-                cout << "\tTo Output Port " << o << " ";
-                for (packet p : voq[i][o])
-                {
-                    cout << "| " << p.packetID << " | ";
-                }
-                cout << endl;
-            }
-        }
-        return;
-    }
-    for (int i = 0; i < nPort; i++)
-    {
-        cout << "Input Port " << i << " ";
-        for (int j = 0; j < inputBuffer[i].size(); j++)
-        {
-            cout << "|" << inputBuffer[i][j].packetID << " " << inputBuffer[i][j].destPort << "| ";
-        }
-        cout << endl;
-    }
-}
-
 int main(int argc, char *argv[])
 {
     parseCommandLineArgs(argc, argv);
-    cout << "nPort = " << nPort << endl;
-    cout << "bufferSize = " << bufferSize << endl;
-    cout << "packGenProb = " << packGenProb << endl;
-    cout << "knockout = " << knockout << endl;
-    cout << "outputFileName = " << outputFileName << endl;
-    cout << "timeSlots = " << timeSlots << endl;
+    cout << "Starting simulation with following parameters:" << endl;
+    cout << "Queue type = " << qSchedule << endl;
+    cout << "Number of ports = " << nPort << endl;
+    cout << "Buffer Size = " << bufferSize << endl;
+    cout << "Packet Generation Probability  = " << packGenProb << endl;
+    cout << "Number of timeslots = " << timeSlots << endl;
+    if (qSchedule == "KOUQ")
+    {
+        cout << "knockout = " << knockout << endl;
+    }
+    cout << "Output File Name = " << outputFileName << endl;
+    // Perform initialisation
     init();
+    // Simulate time slots
     for (unsigned int time = 0; time < timeSlots; time++)
     {
         generateTraffic(time);
         schedulePackets(time);
         transmitPackets(time);
-        // for (int i = 0; i < nPort; i++)
-        // {
-        //     int sum = 0;
-        //     for (int o = 0; o < nPort; o++)
-        //     {
-        //         sum += voq[i][o].size();
-        //     }
-        //     cout << "INPUT PORT " << i << " BUFFER SIZE = " << sum << endl;
-        // }
     }
     totalPacketsDropped = totalPacketsGenerated - totalPacketsTransmitted;
-    cout << "totalPacketsGenerated: " << totalPacketsGenerated << " totalPacketsDropped: " << totalPacketsDropped << " totalPacketsTransmitted: " << totalPacketsTransmitted << '\n';
-    double avgDelay = calculateAverage(packetDelays);
-    cout << "Average packet delay: " << avgDelay << endl;
-    cout << "Standard Deviation of packet delay: " << calculateStdDev(packetDelays, avgDelay) << endl;
-    cout << "Average link utilization: " << (double)totalPacketsTransmitted / (nPort * (timeSlots - 1)) << endl;
-    if (qSchedule == "KOUQ")
-    {
-        double avg = calculateAverage(kouqDropProb);
-        avg = avg / nPort;
-        cout << "KOUQ Drop Probability: " << avg << endl;
-    }
+    writeOutput();
+    string line(50, '-');
+    line.replace(23, 5, "STATS");
+    cout << line << endl;
+    cout << "Total Packets Generated: " << totalPacketsGenerated << endl
+         << "Total Packets Dropped: " << totalPacketsDropped << endl
+         << "Total Packets Transmitted: " << totalPacketsTransmitted << '\n';
 }
 
 void init()
@@ -129,6 +95,7 @@ void init()
         else
             packetGen[i] = 0;
     }
+    fout.open(outputFileName);
 }
 
 unsigned int getNextPID()
@@ -149,12 +116,10 @@ void generateTraffic(unsigned int time)
             {
                 inputBuffer[i].emplace_back(getNextPID(), i, rand() % nPort, time);
                 ++totalPacketsGenerated;
-                cout << "At time " << time << " : generated packet " << inputBuffer[i].back().packetID << " at input port " << i << " destined to output port " << inputBuffer[i].back().destPort << endl;
             }
             else // Drop packet since input buffer is full
             {
                 ++totalPacketsGenerated;
-                cout << "At time " << time << " : generated packet " << getNextPID() << " dropped at input port " << i << " destined to output port " << rand() % nPort << endl;
             }
         }
         // Find time of next packet generation
@@ -175,7 +140,6 @@ void schedulePackets(unsigned int time)
     if (qSchedule == "INQ")
     {
         vector<vector<packet>> inputQueue = inputBuffer;
-        cout << "TIME SCHEDULE = " << time << endl;
         // Find packets destined to each output port
         for (int outP = 0; outP < nPort; outP++)
         {
@@ -194,7 +158,6 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput.front();
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
             else if (packetsToOutput.size() > 1)
             {
@@ -203,16 +166,13 @@ void schedulePackets(unsigned int time)
                 packet pckt = packetsToOutput[randIndex];
                 outputBuffer[outP].push_back(pckt);
                 removeFromInputBuffer(pckt);
-                cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
             }
         }
     }
     else if (qSchedule == "KOUQ")
     {
-        printInputDebug();
         int kouqDropCount = 0; // Number of ports that received more than K packets
         vector<vector<packet>> inputQueue = inputBuffer;
-        cout << "TIME SCHEDULE = " << time << endl;
         // Find packets destined to each output port
         for (int outP = 0; outP < nPort; outP++)
         {
@@ -240,10 +200,9 @@ void schedulePackets(unsigned int time)
                     }
                     else
                     {
-                        cout << "NO SPACE IN BUFFER" << endl;
+                        // cout << time << " : NO SPACE IN BUFFER" << endl;
                     }
                     removeFromInputBuffer(pckt);
-                    cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
             }
             else // More than K (knockout) value packets destined to output port
@@ -259,13 +218,8 @@ void schedulePackets(unsigned int time)
                     {
                         outputBuffer[outP].push_back(pckt);
                     }
-                    else
-                    {
-                        cout << "NO SPACE IN BUFFER" << endl;
-                    }
                     removeFromInputBuffer(pckt);
                     packetsToOutput.erase(packetsToOutput.begin() + randIndex);
-                    cout << time << " : Selected packet " << pckt.packetID << " generated at t = " << pckt.genTime << ", pushed to output port " << pckt.destPort << endl;
                 }
                 // Sort packets in output queue according to arrival time.
                 sort(outputBuffer[outP].begin(), outputBuffer[outP].end(), [](auto const &left, auto const &right)
@@ -273,40 +227,22 @@ void schedulePackets(unsigned int time)
                 // Drop remaining packets that were not randomly selected
                 for (packet pckt : packetsToOutput)
                 {
-                    outputBuffer[outP].push_back(pckt);
                     removeFromInputBuffer(pckt);
                     totalPacketsDropped++;
                 }
-                cout << "KOUQ DROP" << endl;
             }
         }
         kouqDropProb.push_back(kouqDropCount);
-        printInputDebug();
     }
     else if (qSchedule == "iSLIP")
     {
-        // printInputDebug();
-
-        vector<bool> matchedIP(nPort, false);
-        vector<bool> matchedOP(nPort, false);
+        vector<bool> matchedIP(nPort, false); // True if particular input port is matched
+        vector<bool> matchedOP(nPort, false); // True if particular output port  is matched
 
         for (int iter = 0; iter < iSLIPiters; iter++)
         {
-            // cout << "iter = " << iter << endl;
-            // cout << "ip arbiters: " << endl;
-            // for (auto x : ipArbiter)
-            // {
-            //     cout << x << " ";
-            // }
-            // cout << endl;
-            // cout << "op arbiters: " << endl;
-            // for (auto x : opArbiter)
-            // {
-            //     cout << x << " ";
-            // }
-            // cout << endl;
-            vector<vector<int>> requests(nPort);
-            vector<vector<int>> grants(nPort);
+            vector<vector<int>> requests(nPort); // requests[i] stores requests sent by input ports to output port i
+            vector<vector<int>> grants(nPort);   // grants[i] stores all grants received by input port i
             // Step 1: Request
             for (int i = 0; i < nPort; i++)
             {
@@ -357,78 +293,14 @@ void schedulePackets(unsigned int time)
                     {
                         outputBuffer[acceptedOutputPort].push_back(pckt);
                     }
-                    else
-                    {
-                        cout << "NO SPACE IN BUFFER" << endl;
-                    }
                     voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
                     matchedIP[i] = true;
                     matchedOP[acceptedOutputPort] = true;
-                    cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
                 }
             }
             requests.clear();
             grants.clear();
         }
-        /*
-
-                // Step 1 : Request
-                for (int i = 0; i < nPort; i++)
-                {
-                    for (int outP = 0; outP < nPort; outP++)
-                    {
-                        if (voq[i][outP].size())
-                        {
-                            requests[outP].push_back(i);
-                            // cout << "\tInput Port " << i << " sent request to Output Port " << outP << endl;
-                        }
-                    }
-                }
-                // Step 2: Grant
-                for (int outP = 0; outP < nPort; outP++)
-                {
-                    if (requests[outP].size())
-                    {
-                        int grantedInputPort = opArbiter[outP];
-                        // Grant input port than appears next in round robin fashion in arbiter
-                        while (find(requests[outP].begin(), requests[outP].end(), grantedInputPort) == requests[outP].end())
-                        {
-                            grantedInputPort = (grantedInputPort + 1) % nPort;
-                        }
-                        grants[grantedInputPort].push_back(outP);
-                        // cout << "\tOutput Port " << outP << " granted Input Port " << grantedInputPort << endl;
-                    }
-                }
-                // Step 3: Accept
-                for (int i = 0; i < nPort; i++)
-                {
-                    if (grants[i].size())
-                    {
-                        int acceptedOutputPort = ipArbiter[i];
-                        // Find grant to accept by choosing output port that comes next in round robin fashion
-                        while (find(grants[i].begin(), grants[i].end(), acceptedOutputPort) == grants[i].end())
-                        {
-                            acceptedOutputPort = (acceptedOutputPort + 1) % nPort;
-                        }
-                        // Increase input arbiter to point to one location beyond accepted output port
-                        ipArbiter[i] = (acceptedOutputPort + 1) % nPort;
-                        // Increase output arbiter to point to one lcoation beyond input port that accepted request
-                        opArbiter[acceptedOutputPort] = (i + 1) % nPort;
-                        // Send packet to output buffer
-                        packet pckt = voq[i][acceptedOutputPort].front();
-                        if (outputBuffer[acceptedOutputPort].size() < bufferSize)
-                        {
-                            outputBuffer[acceptedOutputPort].push_back(pckt);
-                        }
-                        else
-                        {
-                            cout << "NO SPACE IN BUFFER" << endl;
-                        }
-                        voq[i][acceptedOutputPort].erase(voq[i][acceptedOutputPort].begin());
-                        // cout << "\tInput Port " << i << " accepted Output Port " << acceptedOutputPort << " and sent packet " << pckt.packetID << endl;
-                    }
-                }
-        */
     }
 }
 
@@ -444,7 +316,6 @@ void transmitPackets(unsigned int time)
             outputBuffer[outP].erase(outputBuffer[outP].begin());
             // Store the delay
             unsigned int pcktDelay = time - pckt.genTime + 1; // Add 1 to since it takes one time slot to transmit
-            cout << "\t" << pckt.packetID << " gentime = " << pckt.genTime << " delay = " << pcktDelay << endl;
             packetDelays.push_back(pcktDelay);
             totalPacketsTransmitted++;
         }

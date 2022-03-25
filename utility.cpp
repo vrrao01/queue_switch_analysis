@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 
 void parseCommandLineArgs(int argc, char *argv[])
 {
@@ -99,4 +101,29 @@ double calculateStdDev(const vector<unsigned int> &arr, double avg)
     double stdDev = squareMean - avg * avg;
     stdDev = sqrt(stdDev);
     return stdDev;
+}
+
+void writeOutput()
+{
+    extern ofstream fout;
+    extern vector<unsigned int> packetDelays; // Stores delay of each packet for calculations
+    extern vector<unsigned int> kouqDropProb; // Stores KOUQ Drop Probability
+    extern int totalPacketsTransmitted;
+    double avgDelay = calculateAverage(packetDelays);
+    fout << setw(5) << left << "N" << setw(10) << left << "p" << setw(15) << left << "Queue type" << setw(15) << left << "Avg. PD" << setw(18) << left << "Std Dev of PD" << setw(25) << left << "Avg link utilisation";
+    if (qSchedule == "KOUQ")
+    {
+        fout << setw(15) << left << "KOUQ Drop Prob" << endl;
+    }
+    else
+    {
+        fout << endl;
+    }
+    fout << setw(5) << left << nPort << setw(10) << left << packGenProb << setw(15) << left << qSchedule << setw(15) << left << avgDelay << setw(18) << left << calculateStdDev(packetDelays, avgDelay) << setw(25) << left << (double)totalPacketsTransmitted / (nPort * (timeSlots - 1));
+    if (qSchedule == "KOUQ")
+    {
+        double avg = calculateAverage(kouqDropProb);
+        avg = avg / nPort;
+        fout << setw(15) << left << avg << endl;
+    }
 }
